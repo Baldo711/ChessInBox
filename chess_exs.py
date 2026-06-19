@@ -9,39 +9,23 @@ PROFUNDIDAD  = 155   # igual que CP.PROFUNDIDAD
 GROSOR_PARED = 3     # igual que CP.GROSOR_PARED_EXT
 
 # Parámetros propios del ExS
-ALTURA_EXS    = 20   # altura del cuerpo del extensor (mm)
+ALTURA_EXS    = 40   # altura del cuerpo del extensor (mm)
 ALTO_ALETA    = 10   # alto de la aleta (mm encajados en la CP)
 GROSOR_ALETA  = 2    # grosor de la aleta (perpendicular a la pared)
-TOLERANCIA    = 0.2  # holgura entre la cara interior de la aleta y la CP (mm)
-RADIO_ESQ     = 3    # radio de redondeo de las esquinas exteriores de la aleta (mm)
-N_SEG_ESQ     = 4    # segmentos de arco por esquina (más = más suave, mín. 2)
+TOLERANCIA    = 0.2  # holgura entre cara interior de aleta y CP (mm)
+RADIO_ESQ     = 3    # radio de redondeo esquinas exteriores de la aleta (mm)
+N_SEG_ESQ     = 4    # segmentos de arco por esquina
+
+# Parámetros del riel de cola de milano (cara frontal)
+ANCHO_PLACA    = ANCHO * 0.5   # ancho de la placa = 50 % del ExS → 77.5 mm
+ALTO_BASE_RIEL = 8             # alto (Z) del riel en la base (mm)
+PROF_RIEL      = 2.5           # profundidad (Y) del riel hacia afuera (mm)
+# Ángulo dovetail implícito 45°: ensanche = PROF_RIEL * tan(45°) = PROF_RIEL
 
 
 def crear_exs(ancho, profundidad, altura, grosor_pared,
-              alto_aleta, grosor_aleta, tolerancia, radio_esq, n_seg_esq):
-    """
-    ExS – Extensor de Soporte.
-
-    Marco rectangular watertight (sin techo ni suelo) que se apila entre dos CP.
-    Las aletas forman un anillo rectangular CONTINUO con esquinas redondeadas
-    que rodea el exterior del ExS en el borde inferior y superior.
-
-    Función de las aletas:
-      Al apoyar el ExS sobre la CP inferior, las aletas inferiores rodean las
-      paredes exteriores de la CP, impidiendo que se desplace lateralmente.
-      Las aletas superiores hacen lo mismo con la CP colocada encima.
-
-    Sección transversal del anillo de aleta (vista desde arriba):
-
-        ╭──────────────────────────────────────────╮  ← aleta exterior (redondeada)
-        │  ┌────────────────────────────────────┐  │
-        │  │  pared del ExS + holgura para CP   │  │
-        │  └────────────────────────────────────┘  │
-        ╰──────────────────────────────────────────╯
-
-    Los anillos de aleta se solapan levemente con el cuerpo del ExS en XY y Z
-    para que el slicer los una en un único sólido imprimible.
-    """
+              alto_aleta, grosor_aleta, tolerancia, radio_esq, n_seg_esq,
+              ancho_placa, alto_base_riel, prof_riel):
 
     ge  = grosor_pared
     a   = ancho
@@ -50,18 +34,12 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
     ga  = grosor_aleta
     tol = tolerancia
     ha  = alto_aleta
-    r   = max(0.5, radio_esq)          # radio mínimo 0.5 mm
-    n   = max(2, n_seg_esq)            # mínimo 2 segmentos de arco
+    r   = max(0.5, radio_esq)
+    n   = max(2, n_seg_esq)
 
-    # Aleta offset: cuánto sobresale la aleta más allá del exterior del ExS
-    AO  = ga + tol
-
-    # Aleta inner: penetra esta distancia en la pared del ExS para
-    # garantizar unión volumétrica con el cuerpo principal en el slicer.
-    AI  = min(ge - 0.1, 1.0)
-
-    # Z-overlap: cuánto se extiende la aleta dentro del cuerpo del ExS
-    OVL_Z = 1.0
+    AO    = ga + tol          # cuánto sobresale la aleta más allá del ExS
+    AI    = min(ge - 0.1, 1.0)  # penetración en la pared para unión en slicer
+    OVL_Z = 1.0               # solapamiento Z con el cuerpo del ExS
 
     # ── Material ──────────────────────────────────────────────────────────────
     mat = bpy.data.materials.new(name="Material_ExS")
@@ -79,7 +57,7 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
     faces    = []
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CUERPO PRINCIPAL: marco rectangular watertight (sin techo ni suelo)
+    # CUERPO PRINCIPAL: marco rectangular watertight
     # ══════════════════════════════════════════════════════════════════════════
 
     vEB = len(vertices)
@@ -91,22 +69,22 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
     vIT = len(vertices)
     vertices.extend([(ge,ge,h),(a-ge,ge,h),(a-ge,p-ge,h),(ge,p-ge,h)])
 
-    faces.append([vEB,   vEB+1, vIB+1, vIB  ])   # borde inf
+    faces.append([vEB,   vEB+1, vIB+1, vIB  ])   # bordes inferiores
     faces.append([vEB+1, vEB+2, vIB+2, vIB+1])
     faces.append([vEB+2, vEB+3, vIB+3, vIB+2])
     faces.append([vEB+3, vEB,   vIB,   vIB+3])
 
-    faces.append([vET,   vIT,   vIT+1, vET+1])   # borde sup
+    faces.append([vET,   vIT,   vIT+1, vET+1])   # bordes superiores
     faces.append([vET+1, vIT+1, vIT+2, vET+2])
     faces.append([vET+2, vIT+2, vIT+3, vET+3])
     faces.append([vET+3, vIT+3, vIT,   vET  ])
 
-    faces.append([vEB,   vEB+1, vET+1, vET  ])   # paredes ext
+    faces.append([vEB,   vEB+1, vET+1, vET  ])   # paredes exteriores
     faces.append([vEB+1, vEB+2, vET+2, vET+1])
     faces.append([vEB+2, vEB+3, vET+3, vET+2])
     faces.append([vEB+3, vEB,   vET,   vET+3])
 
-    faces.append([vIB,   vIT,   vIT+1, vIB+1])   # paredes int
+    faces.append([vIB,   vIT,   vIT+1, vIB+1])   # paredes interiores
     faces.append([vIB+1, vIT+1, vIT+2, vIB+2])
     faces.append([vIB+2, vIT+2, vIT+3, vIB+3])
     faces.append([vIB+3, vIT+3, vIT,   vIB  ])
@@ -116,113 +94,135 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
     # ══════════════════════════════════════════════════════════════════════════
 
     def rounded_rect_poly(x0, y0, x1, y1):
-        """
-        Polígono CCW para un rectángulo con esquinas redondeadas (radio r, n seg/esquina).
-        Devuelve 4*n puntos (x,y). Los segmentos rectos entre arcos quedan implícitos.
-        """
         pts = []
         for cx, cy, a0, a1 in [
-            (x0+r, y0+r, math.pi,      3*math.pi/2),   # BL: 180° → 270°
-            (x1-r, y0+r, 3*math.pi/2,  2*math.pi   ),   # BR: 270° → 360°
-            (x1-r, y1-r, 0,            math.pi/2   ),   # TR:   0° →  90°
-            (x0+r, y1-r, math.pi/2,    math.pi     ),   # TL:  90° → 180°
+            (x0+r, y0+r, math.pi,      3*math.pi/2),
+            (x1-r, y0+r, 3*math.pi/2,  2*math.pi  ),
+            (x1-r, y1-r, 0,            math.pi/2  ),
+            (x0+r, y1-r, math.pi/2,    math.pi    ),
         ]:
             for i in range(n):
-                a = a0 + (a1 - a0) * i / n
-                pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-        return pts  # N = 4*n puntos
+                ang = a0 + (a1 - a0) * i / n
+                pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        return pts
 
     def add_rounded_ring(ox0, oy0, ox1, oy1, ix0, iy0, ix1, iy1, z0, z1):
-        """
-        Anillo rectangular watertight con esquinas exteriores redondeadas.
-
-        Outer polygon: rectángulo redondeado (4*n vértices en XY)
-        Inner polygon: rectángulo con esquinas vivas (4 vértices en XY)
-
-        Caras generadas (normales hacia afuera):
-          · N paredes exteriores (a lo largo de Z)
-          · 4 paredes interiores (a lo largo de Z)
-          · Aro inferior (z=z0): triangulación de anillo outer→inner
-          · Aro superior (z=z1): triangulación de anillo inner→outer
-        """
         outer_xy = rounded_rect_poly(ox0, oy0, ox1, oy1)
-        N = len(outer_xy)                                # = 4 * n
+        N = len(outer_xy)
         inner_xy = [(ix0,iy0),(ix1,iy0),(ix1,iy1),(ix0,iy1)]
 
         s = len(vertices)
-        for x, y in outer_xy:  vertices.append((x, y, z0))   # ob = s .. s+N-1
-        for x, y in outer_xy:  vertices.append((x, y, z1))   # ot = s+N .. s+2N-1
-        for x, y in inner_xy:  vertices.append((x, y, z0))   # ib = s+2N .. s+2N+3
-        for x, y in inner_xy:  vertices.append((x, y, z1))   # it = s+2N+4 .. s+2N+7
+        for x, y in outer_xy:  vertices.append((x, y, z0))
+        for x, y in outer_xy:  vertices.append((x, y, z1))
+        for x, y in inner_xy:  vertices.append((x, y, z0))
+        for x, y in inner_xy:  vertices.append((x, y, z1))
 
         ob = s;      ot = s + N
         ib = s+2*N;  it = s + 2*N + 4
 
-        # Paredes exteriores: N cuadriláteros a lo largo de Z
         for i in range(N):
             j = (i + 1) % N
             faces.append([ob+i, ob+j, ot+j, ot+i])
 
-        # Paredes interiores: 4 cuadriláteros
         for i in range(4):
             j = (i + 1) % 4
             faces.append([ib+i, it+i, it+j, ib+j])
 
-        # ── Aros inferior y superior ──────────────────────────────────────────
-        # Triangulación del anillo: por cada esquina k del polígono exterior,
-        # sus n vértices de arco corresponden a la esquina k del rectángulo interior.
-        # Se generan:
-        #   · n-1 triángulos en abanico desde el vértice interior k al arco exterior
-        #   · 1 cuadrilátero "puente" que cierra la sección recta entre esquinas k y k+1
-        #
-        # normals_make_consistent al final corrige cualquier orientación incorrecta.
-
         for z_base, ob_r, ib_r, sign in [(z0, ob, ib, -1), (z1, ot, it, +1)]:
             for k in range(4):
-                nk      = (k + 1) % 4
-                arc_s   = k * n
-                ik      = ib_r + k
-                ik_next = ib_r + nk
+                nk    = (k + 1) % 4
+                arc_s = k * n
+                ik    = ib_r + k
+                ik_n  = ib_r + nk
 
-                # Abanico de triángulos sobre el arco de la esquina k
                 for i in range(n - 1):
                     oi  = ob_r + (arc_s + i)     % N
                     oii = ob_r + (arc_s + i + 1) % N
                     if sign < 0:
-                        faces.append([ik, oii, oi])    # aro inferior: normal -z
+                        faces.append([ik, oii, oi])
                     else:
-                        faces.append([ik, oi,  oii])   # aro superior: normal +z
+                        faces.append([ik, oi,  oii])
 
-                # Cuadrilátero puente hasta la siguiente esquina
                 ol = ob_r + (arc_s + n - 1) % N
                 of = ob_r + (nk * n)        % N
                 if sign < 0:
-                    faces.append([ik, ik_next, of, ol])    # normal -z
+                    faces.append([ik, ik_n, of, ol])
                 else:
-                    faces.append([ik, ol, of, ik_next])    # normal +z
+                    faces.append([ik, ol,   of, ik_n])
 
-    # ── Aleta inferior ────────────────────────────────────────────────────────
-    # z: de -ha hasta OVL_Z (solapamiento con cuerpo ExS para unión en slicer)
+    # Aleta inferior: z de -ha hasta OVL_Z
     add_rounded_ring(
-        ox0=-AO,  oy0=-AO,  ox1=a+AO,  oy1=p+AO,
-        ix0=AI,   iy0=AI,   ix1=a-AI,  iy1=p-AI,
-        z0=-ha,   z1=OVL_Z,
+        ox0=-AO, oy0=-AO, ox1=a+AO, oy1=p+AO,
+        ix0=AI,  iy0=AI,  ix1=a-AI, iy1=p-AI,
+        z0=-ha,  z1=OVL_Z,
     )
 
-    # ── Aleta superior ────────────────────────────────────────────────────────
-    # z: de h-OVL_Z hasta h+ha
+    # Aleta superior: z de h-OVL_Z hasta h+ha
     add_rounded_ring(
-        ox0=-AO,  oy0=-AO,  ox1=a+AO,  oy1=p+AO,
-        ix0=AI,   iy0=AI,   ix1=a-AI,  iy1=p-AI,
+        ox0=-AO, oy0=-AO, ox1=a+AO, oy1=p+AO,
+        ix0=AI,  iy0=AI,  ix1=a-AI, iy1=p-AI,
         z0=h-OVL_Z, z1=h+ha,
     )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # RIEL DE COLA DE MILANO — cara frontal (Y=0, exterior)
+    #
+    # El riel es un prisma trapezoidal que sobresale de la cara frontal del ExS.
+    # La placa (chess_plate.py) tiene la ranura negativa de este riel y desliza
+    # horizontalmente sobre él a lo largo del eje X.
+    #
+    # Sección transversal (plano YZ):
+    #
+    #    Z
+    #    │       OVL_Y (dentro de la pared, para unión en slicer)
+    #    │  base ├─────┐
+    #    │       │     │  ← base, altura ALTO_BASE_RIEL
+    #    │  base └─────┘
+    #    │       ╲     ╱  ← ensanche 45°
+    #    │    tip ╲───╱   ← punta, altura ALTO_BASE_RIEL + 2*PROF_RIEL
+    #    │──────────────── Y=0 (cara exterior ExS)
+    #    │        Y=-PROF_RIEL (punta del riel, hacia afuera)
+    #    └──────────────────────── Y
+    #
+    # ══════════════════════════════════════════════════════════════════════════
+
+    OVL_Y = 1.0   # penetración en la pared del ExS para slicer union
+    rx0   = (a - ancho_placa) / 2
+    rx1   = (a + ancho_placa) / 2
+    rz_c  = h / 2
+    rz_bb = rz_c - alto_base_riel / 2
+    rz_bt = rz_c + alto_base_riel / 2
+    rz_tb = rz_bb - prof_riel         # punta ensanchada 45°
+    rz_tt = rz_bt + prof_riel
+
+    vR = len(vertices)
+    # Izquierda (X=rx0)
+    vertices.extend([
+        (rx0,  OVL_Y,    rz_bb),   # 0 base-fondo
+        (rx0,  OVL_Y,    rz_bt),   # 1 base-techo
+        (rx0, -prof_riel, rz_tt),  # 2 punta-techo
+        (rx0, -prof_riel, rz_tb),  # 3 punta-fondo
+    ])
+    # Derecha (X=rx1)
+    vertices.extend([
+        (rx1,  OVL_Y,    rz_bb),   # 4
+        (rx1,  OVL_Y,    rz_bt),   # 5
+        (rx1, -prof_riel, rz_tt),  # 6
+        (rx1, -prof_riel, rz_tb),  # 7
+    ])
+
+    faces.append([vR,   vR+3, vR+2, vR+1])          # tapa izquierda  (-X)
+    faces.append([vR+4, vR+5, vR+6, vR+7])          # tapa derecha    (+X)
+    faces.append([vR,   vR+4, vR+5, vR+1])          # cara interior   (+Y, solapada)
+    faces.append([vR+3, vR+2, vR+6, vR+7])          # cara exterior   (-Y, frontal)
+    faces.append([vR+1, vR+5, vR+6, vR+2])          # cara superior   (+Z)
+    faces.append([vR,   vR+3, vR+7, vR+4])          # cara inferior   (-Z)
 
     # ── Construir mesh ────────────────────────────────────────────────────────
     mesh.from_pydata(vertices, [], faces)
     mesh.validate()
     mesh.update()
 
-    # Recalcular normales para asegurar orientación correcta en todo el sólido
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
@@ -237,20 +237,23 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
 
 # ── Ejecutar ──────────────────────────────────────────────────────────────────
 exs = crear_exs(
-    ancho        = ANCHO,
-    profundidad  = PROFUNDIDAD,
-    altura       = ALTURA_EXS,
-    grosor_pared = GROSOR_PARED,
-    alto_aleta   = ALTO_ALETA,
-    grosor_aleta = GROSOR_ALETA,
-    tolerancia   = TOLERANCIA,
-    radio_esq    = RADIO_ESQ,
-    n_seg_esq    = N_SEG_ESQ,
+    ancho          = ANCHO,
+    profundidad    = PROFUNDIDAD,
+    altura         = ALTURA_EXS,
+    grosor_pared   = GROSOR_PARED,
+    alto_aleta     = ALTO_ALETA,
+    grosor_aleta   = GROSOR_ALETA,
+    tolerancia     = TOLERANCIA,
+    radio_esq      = RADIO_ESQ,
+    n_seg_esq      = N_SEG_ESQ,
+    ancho_placa    = ANCHO_PLACA,
+    alto_base_riel = ALTO_BASE_RIEL,
+    prof_riel      = PROF_RIEL,
 )
 
 print(f"✓ ExS creado correctamente")
 print(f"  Cuerpo:  {ANCHO} x {PROFUNDIDAD} x {ALTURA_EXS} mm")
-print(f"  Aletas:  grosor={GROSOR_ALETA} mm  |  alto={ALTO_ALETA} mm  |  tolerancia={TOLERANCIA} mm")
+print(f"  Aletas:  grosor={GROSOR_ALETA} mm  |  alto={ALTO_ALETA} mm  |  tol={TOLERANCIA} mm")
 print(f"  Esquinas: radio={RADIO_ESQ} mm  |  segmentos/esquina={N_SEG_ESQ}")
-print(f"  Exterior aleta: {ANCHO + 2*(GROSOR_ALETA+TOLERANCIA):.1f} x {PROFUNDIDAD + 2*(GROSOR_ALETA+TOLERANCIA):.1f} mm")
-print(f"  Altura total apilada (CP + ExS): {45 + ALTURA_EXS} mm  (asumiendo CP.ALTURA=45)")
+print(f"  Riel cola de milano: ancho={ANCHO_PLACA:.1f} mm  |  base={ALTO_BASE_RIEL} mm  |  prof={PROF_RIEL} mm")
+print(f"  Riel centrado en Z={ALTURA_EXS/2:.1f} mm, X=[{(ANCHO-ANCHO_PLACA)/2:.1f}, {(ANCHO+ANCHO_PLACA)/2:.1f}] mm")
