@@ -1,0 +1,24 @@
+# Blender
+*.blend
+*.blend1
+
+# Archivos de exportación 3D (generados, no fuente)
+*.stl
+*.3mf
+*.obj
+*.fbx
+*.gltf
+*.glb
+
+# Archivos de slicer
+*.gcode
+*.ufp
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
