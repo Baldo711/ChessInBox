@@ -1,50 +1,65 @@
 import bpy
+import math
 
+# ══════════════════════════════════════════════════════════════════════════════
 # PARÁMETROS
-ANCHO = 155
-PROFUNDIDAD = 155
-ALTURA = 45
-DIVISIONES_X = 3
-DIVISIONES_Y = 3
-DIVISIONES_Z = 0
+# ══════════════════════════════════════════════════════════════════════════════
+ANCHO          = 155
+PROFUNDIDAD    = 155
+ALTURA         = 45
+DIVISIONES_X   = 3
+DIVISIONES_Y   = 3
+DIVISIONES_Z   = 0
 GROSOR_PARED_INT = 2
 GROSOR_PARED_EXT = 3
+RADIO_ESQ      = 3   # radio de redondeo esquinas exteriores (mm); max = GROSOR_PARED_EXT
+N_SEG_ESQ      = 4   # segmentos de arco por esquina (mismo que ExS = visual consistente)
 
-def crear_caja_correcta(ancho, profundidad, altura, div_x, div_y, div_z, grosor_int, grosor_ext):
+
+def crear_caja_correcta(ancho, profundidad, altura,
+                        div_x, div_y, div_z,
+                        grosor_int, grosor_ext,
+                        radio_esq, n_seg_esq):
     """
-    Caja sin techo con mesh watertight (cerrado) apto para impresión 3D.
+    CP – Contenedor de Piezas con esquinas exteriores redondeadas.
 
     Estructura de vértices (5 anillos):
-      A  – anillo exterior inferior  (z=0)
-      B  – anillo exterior a nivel de suelo interior  (z=ge)
-      C  – anillo interior a nivel de suelo  (z=ge)
-      D  – anillo exterior superior  (z=h)
-      E  – anillo interior superior  (z=h)
+      A  – anillo exterior inferior  (z=0,  N vértices, redondeado)
+      B  – anillo exterior a nivel del suelo interior (z=ge, N vértices, redondeado)
+      C  – anillo interior a nivel del suelo (z=ge, 4 vértices, rectangular)
+      D  – anillo exterior superior  (z=h,  N vértices, redondeado)
+      E  – anillo interior superior  (z=h,  4 vértices, rectangular)
 
-    Caras generadas:
-      · Fondo exterior
-      · Paredes exteriores (A→B y B→D, dos tramos para compartir arista con el suelo)
-      · Tiras del suelo: trapezoides que conectan B con C (cierran la base de las paredes)
-      · Cara central del suelo interior
-      · Paredes interiores (C→E, normales hacia el interior)
-      · Borde superior: trapezoides que conectan D con E (cierran el remate de las paredes)
+    Las esquinas interiores se mantienen rectangulares para no reducir el espacio
+    interior y porque no son visibles. Las exteriores se redondean para que el ExS
+    (que también usa RADIO_ESQ) encaje visualmente.
+
+    Caras generadas (normales hacia afuera):
+      · Fondo (ring A, normal -z)
+      · Paredes exteriores A→B y B→D (N quads cada tramo)
+      · Tiras del suelo B→C (triangulación annular exterior redondeado → interior recto)
+      · Cara central del suelo (ring C, normal +z)
+      · Paredes interiores C→E (4 quads, normales hacia el interior)
+      · Borde superior D→E (triangulación annular, normal +z)
+      · Divisiones internas (cajas sólidas rectangulares sin cambios)
     """
 
     ge = grosor_ext
     a  = ancho
     p  = profundidad
     h  = altura
+    r  = max(0.5, min(radio_esq, ge))   # r ≤ ge para que la esquina interior quepa
+    n  = max(2, n_seg_esq)
+    N  = 4 * n
 
-    # Crear material
+    # ── Material ──────────────────────────────────────────────────────────────
     mat = bpy.data.materials.new(name="Material_Caja")
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs[0].default_value = (0.8, 0.8, 0.9, 1.0)
+    mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = (0.8, 0.8, 0.9, 1.0)
 
-    # Crear mesh
+    # ── Mesh / Objeto ─────────────────────────────────────────────────────────
     mesh = bpy.data.meshes.new("CajaDividida")
     obj  = bpy.data.objects.new("CajaDividida", mesh)
-
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
@@ -52,173 +67,161 @@ def crear_caja_correcta(ancho, profundidad, altura, div_x, div_y, div_z, grosor_
     vertices = []
     faces    = []
 
-    # ── ANILLO A: exterior inferior (z=0) ─────────────────────────────────────
+    # ── Polígono exterior redondeado (CCW desde arriba) ───────────────────────
+    def rounded_rect_poly(x0, y0, x1, y1):
+        """4*n puntos CCW para rectángulo con esquinas redondeadas."""
+        pts = []
+        for cx, cy, a0, a1 in [
+            (x0+r, y0+r, math.pi,     3*math.pi/2),   # BL: 180°→270°
+            (x1-r, y0+r, 3*math.pi/2, 2*math.pi  ),   # BR: 270°→360°
+            (x1-r, y1-r, 0,           math.pi/2  ),   # TR:   0°→ 90°
+            (x0+r, y1-r, math.pi/2,   math.pi    ),   # TL:  90°→180°
+        ]:
+            for i in range(n):
+                ang = a0 + (a1 - a0) * i / n
+                pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        return pts
+
+    outer_xy = rounded_rect_poly(0, 0, a, p)
+    inner_xy = [(ge, ge), (a-ge, ge), (a-ge, p-ge), (ge, p-ge)]   # CCW
+
+    # ── 5 Anillos ─────────────────────────────────────────────────────────────
     vA = len(vertices)
-    vertices.extend([
-        (0, 0, 0),   # A0  frente-izquierda
-        (a, 0, 0),   # A1  frente-derecha
-        (a, p, 0),   # A2  atrás-derecha
-        (0, p, 0),   # A3  atrás-izquierda
-    ])
-
-    # ── ANILLO B: exterior a nivel del suelo interior (z=ge) ──────────────────
+    for x, y in outer_xy:  vertices.append((x, y, 0 ))   # A: exterior z=0  (N verts)
     vB = len(vertices)
-    vertices.extend([
-        (0, 0, ge),  # B0
-        (a, 0, ge),  # B1
-        (a, p, ge),  # B2
-        (0, p, ge),  # B3
-    ])
-
-    # ── ANILLO C: interior a nivel del suelo (z=ge) ───────────────────────────
+    for x, y in outer_xy:  vertices.append((x, y, ge))   # B: exterior z=ge (N verts)
     vC = len(vertices)
-    vertices.extend([
-        (ge,   ge,   ge),  # C0  frente-izquierda interior
-        (a-ge, ge,   ge),  # C1  frente-derecha interior
-        (a-ge, p-ge, ge),  # C2  atrás-derecha interior
-        (ge,   p-ge, ge),  # C3  atrás-izquierda interior
-    ])
-
-    # ── ANILLO D: exterior superior (z=h) ─────────────────────────────────────
+    for x, y in inner_xy:  vertices.append((x, y, ge))   # C: interior z=ge (4 verts)
     vD = len(vertices)
-    vertices.extend([
-        (0, 0, h),   # D0
-        (a, 0, h),   # D1
-        (a, p, h),   # D2
-        (0, p, h),   # D3
-    ])
-
-    # ── ANILLO E: interior superior (z=h) ─────────────────────────────────────
+    for x, y in outer_xy:  vertices.append((x, y, h ))   # D: exterior z=h  (N verts)
     vE = len(vertices)
-    vertices.extend([
-        (ge,   ge,   h),   # E0
-        (a-ge, ge,   h),   # E1
-        (a-ge, p-ge, h),   # E2
-        (ge,   p-ge, h),   # E3
-    ])
+    for x, y in inner_xy:  vertices.append((x, y, h ))   # E: interior z=h  (4 verts)
 
-    # ── FONDO EXTERIOR (normal hacia -z) ──────────────────────────────────────
-    faces.append([vA, vA+3, vA+2, vA+1])
+    # ── Fondo exterior (ring A, normal -z): polígono N-gon en orden inverso ───
+    faces.append(list(range(vA + N - 1, vA - 1, -1)))
 
-    # ── PAREDES EXTERIORES INFERIORES  A→B (normal hacia fuera) ───────────────
-    faces.append([vA,   vA+1, vB+1, vB  ])  # frente
-    faces.append([vA+1, vA+2, vB+2, vB+1])  # derecha
-    faces.append([vA+2, vA+3, vB+3, vB+2])  # atrás
-    faces.append([vA+3, vA,   vB,   vB+3])  # izquierda
+    # ── Paredes exteriores A→B  (N quads) ────────────────────────────────────
+    for i in range(N):
+        j = (i + 1) % N
+        faces.append([vA+i, vA+j, vB+j, vB+i])
 
-    # ── TIRAS DEL SUELO INTERIOR  B→C  (normal hacia +z) ─────────────────────
-    # Cuatro trapezoides que conectan el anillo exterior B con el interior C,
-    # cerrando el grosor de las paredes a nivel del suelo.
-    faces.append([vB,   vB+1, vC+1, vC  ])  # frente
-    faces.append([vB+1, vB+2, vC+2, vC+1])  # derecha
-    faces.append([vB+2, vB+3, vC+3, vC+2])  # atrás
-    faces.append([vB+3, vB,   vC,   vC+3])  # izquierda
+    # ── Tiras del suelo B→C (outer N verts → inner 4 verts, normal +z) ───────
+    # Misma triangulación que los aros de aleta en chess_exs.py
+    def add_annular_rim(outer_base, inner_base, sign):
+        """
+        Triangula el aro horizontal entre el anillo exterior (N verts) y
+        el interior (4 verts). sign=+1 → normal +z; sign=-1 → normal -z.
+        """
+        for k in range(4):
+            nk    = (k + 1) % 4
+            arc_s = k * n
+            ik    = inner_base + k
+            ik_n  = inner_base + nk
 
-    # ── CARA CENTRAL DEL SUELO INTERIOR (normal hacia +z) ─────────────────────
+            # Abanico de triángulos sobre el arco k
+            for i in range(n - 1):
+                oi  = outer_base + (arc_s + i)     % N
+                oii = outer_base + (arc_s + i + 1) % N
+                if sign > 0:
+                    faces.append([ik, oi, oii])    # normal +z
+                else:
+                    faces.append([ik, oii, oi])    # normal -z
+
+            # Cuadrilátero puente hasta la siguiente esquina interior
+            ol = outer_base + (arc_s + n - 1) % N
+            of = outer_base + (nk * n)        % N
+            if sign > 0:
+                faces.append([ik, ol, of, ik_n])   # normal +z
+            else:
+                faces.append([ik, ik_n, of, ol])   # normal -z
+
+    add_annular_rim(vB, vC, sign=+1)   # tiras del suelo  (B→C)
+
+    # ── Cara central del suelo interior (ring C, normal +z) ──────────────────
     faces.append([vC, vC+1, vC+2, vC+3])
 
-    # ── PAREDES EXTERIORES SUPERIORES  B→D (normal hacia fuera) ───────────────
-    faces.append([vB,   vB+1, vD+1, vD  ])  # frente
-    faces.append([vB+1, vB+2, vD+2, vD+1])  # derecha
-    faces.append([vB+2, vB+3, vD+3, vD+2])  # atrás
-    faces.append([vB+3, vB,   vD,   vD+3])  # izquierda
+    # ── Paredes exteriores B→D  (N quads) ────────────────────────────────────
+    for i in range(N):
+        j = (i + 1) % N
+        faces.append([vB+i, vB+j, vD+j, vD+i])
 
-    # ── PAREDES INTERIORES  C→E  (normal hacia el interior) ───────────────────
-    faces.append([vC,   vC+1, vE+1, vE  ])  # frente   (normal +y)
-    faces.append([vC+1, vE+1, vE+2, vC+2])  # derecha  (normal -x)
-    faces.append([vC+2, vE+2, vE+3, vC+3])  # atrás    (normal -y)
-    faces.append([vC+3, vE+3, vE,   vC  ])  # izquierda(normal +x)
+    # ── Paredes interiores C→E (4 quads, normal hacia el interior) ───────────
+    for i in range(4):
+        j = (i + 1) % 4
+        faces.append([vC+i, vE+i, vE+j, vC+j])
 
-    # ── BORDE SUPERIOR  D→E  (normal hacia +z) ────────────────────────────────
-    # Cuatro trapezoides que cierran el remate superior de las paredes.
-    faces.append([vD,   vD+1, vE+1, vE  ])  # frente
-    faces.append([vD+1, vD+2, vE+2, vE+1])  # derecha
-    faces.append([vD+2, vD+3, vE+3, vE+2])  # atrás
-    faces.append([vD+3, vD,   vE,   vE+3])  # izquierda
+    # ── Borde superior D→E (outer N verts → inner 4 verts, normal +z) ────────
+    add_annular_rim(vD, vE, sign=+1)
 
-    # ── DIVISIONES INTERNAS ───────────────────────────────────────────────────
-    # Cada división es un sólido cerrado (6 caras) que va del suelo (z=ge)
-    # hasta la parte superior (z=h), listo para union booleana en el slicer.
+    # ══════════════════════════════════════════════════════════════════════════
+    # DIVISIONES INTERNAS (rectangulares, sin cambios)
+    # ══════════════════════════════════════════════════════════════════════════
+    def add_box(x0, y0, z0, x1, y1, z1):
+        s = len(vertices)
+        vertices.extend([
+            (x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+            (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1),
+        ])
+        faces.append([s,   s+3, s+2, s+1])  # fondo
+        faces.append([s+4, s+5, s+6, s+7])  # techo
+        faces.append([s,   s+1, s+5, s+4])  # frente
+        faces.append([s+2, s+3, s+7, s+6])  # atrás
+        faces.append([s,   s+4, s+7, s+3])  # izquierda
+        faces.append([s+1, s+2, s+6, s+5])  # derecha
 
-    # Divisiones en X (tabiques de lado a lado)
-    paso_x = ancho / (div_x + 1)
+    # Divisiones en X
+    paso_x = a / (div_x + 1)
     for i in range(1, div_x + 1):
         x = paso_x * i
-        s = len(vertices)
-        vertices.extend([
-            (x - grosor_int/2, ge,   ge),  # s+0
-            (x + grosor_int/2, ge,   ge),  # s+1
-            (x + grosor_int/2, p-ge, ge),  # s+2
-            (x - grosor_int/2, p-ge, ge),  # s+3
-            (x - grosor_int/2, ge,   h ),  # s+4
-            (x + grosor_int/2, ge,   h ),  # s+5
-            (x + grosor_int/2, p-ge, h ),  # s+6
-            (x - grosor_int/2, p-ge, h ),  # s+7
-        ])
-        faces.append([s,   s+3, s+2, s+1])  # fondo
-        faces.append([s+4, s+5, s+6, s+7])  # techo
-        faces.append([s,   s+1, s+5, s+4])  # frente
-        faces.append([s+2, s+3, s+7, s+6])  # atrás
-        faces.append([s,   s+4, s+7, s+3])  # izquierda
-        faces.append([s+1, s+2, s+6, s+5])  # derecha
+        add_box(x - grosor_int/2, ge, ge, x + grosor_int/2, p-ge, h)
 
-    # Divisiones en Y (tabiques de delante a atrás)
-    paso_y = profundidad / (div_y + 1)
+    # Divisiones en Y
+    paso_y = p / (div_y + 1)
     for i in range(1, div_y + 1):
         y = paso_y * i
-        s = len(vertices)
-        vertices.extend([
-            (ge,   y - grosor_int/2, ge),  # s+0
-            (a-ge, y - grosor_int/2, ge),  # s+1
-            (a-ge, y + grosor_int/2, ge),  # s+2
-            (ge,   y + grosor_int/2, ge),  # s+3
-            (ge,   y - grosor_int/2, h ),  # s+4
-            (a-ge, y - grosor_int/2, h ),  # s+5
-            (a-ge, y + grosor_int/2, h ),  # s+6
-            (ge,   y + grosor_int/2, h ),  # s+7
-        ])
-        faces.append([s,   s+3, s+2, s+1])  # fondo
-        faces.append([s+4, s+5, s+6, s+7])  # techo
-        faces.append([s,   s+1, s+5, s+4])  # frente
-        faces.append([s+2, s+3, s+7, s+6])  # atrás
-        faces.append([s,   s+4, s+7, s+3])  # izquierda
-        faces.append([s+1, s+2, s+6, s+5])  # derecha
+        add_box(ge, y - grosor_int/2, ge, a-ge, y + grosor_int/2, h)
 
-    # Divisiones en Z (bandejas horizontales)
+    # Divisiones en Z
     if div_z > 0:
-        paso_z = altura / (div_z + 1)
+        paso_z = h / (div_z + 1)
         for i in range(1, div_z + 1):
             z = paso_z * i
-            s = len(vertices)
-            vertices.extend([
-                (ge,   ge,   z - grosor_int/2),  # s+0
-                (a-ge, ge,   z - grosor_int/2),  # s+1
-                (a-ge, p-ge, z - grosor_int/2),  # s+2
-                (ge,   p-ge, z - grosor_int/2),  # s+3
-                (ge,   ge,   z + grosor_int/2),  # s+4
-                (a-ge, ge,   z + grosor_int/2),  # s+5
-                (a-ge, p-ge, z + grosor_int/2),  # s+6
-                (ge,   p-ge, z + grosor_int/2),  # s+7
-            ])
-            faces.append([s,   s+3, s+2, s+1])  # abajo
-            faces.append([s+4, s+5, s+6, s+7])  # arriba
-            faces.append([s,   s+1, s+5, s+4])  # frente
-            faces.append([s+2, s+3, s+7, s+6])  # atrás
-            faces.append([s,   s+4, s+7, s+3])  # izquierda
-            faces.append([s+1, s+2, s+6, s+5])  # derecha
+            add_box(ge, ge, z - grosor_int/2, a-ge, p-ge, z + grosor_int/2)
 
-    # Construir mesh
+    # ── Construir mesh ────────────────────────────────────────────────────────
     mesh.from_pydata(vertices, [], faces)
+    mesh.validate()
     mesh.update()
 
-    obj.data.materials.append(mat)
+    # Recalcular normales
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
 
+    obj.data.materials.append(mat)
     return obj
 
-# Ejecutar
-caja = crear_caja_correcta(ANCHO, PROFUNDIDAD, ALTURA, DIVISIONES_X, DIVISIONES_Y, DIVISIONES_Z, GROSOR_PARED_INT, GROSOR_PARED_EXT)
 
-print(f"✓ Caja creada correctamente")
-print(f"  Dimensiones: {ANCHO} x {PROFUNDIDAD} x {ALTURA}")
-print(f"  Grosor paredes externas: {GROSOR_PARED_EXT}")
-print(f"  Grosor divisiones internas: {GROSOR_PARED_INT}")
+# ── Ejecutar ──────────────────────────────────────────────────────────────────
+caja = crear_caja_correcta(
+    ancho        = ANCHO,
+    profundidad  = PROFUNDIDAD,
+    altura       = ALTURA,
+    div_x        = DIVISIONES_X,
+    div_y        = DIVISIONES_Y,
+    div_z        = DIVISIONES_Z,
+    grosor_int   = GROSOR_PARED_INT,
+    grosor_ext   = GROSOR_PARED_EXT,
+    radio_esq    = RADIO_ESQ,
+    n_seg_esq    = N_SEG_ESQ,
+)
+
+print(f"✓ CP creada correctamente")
+print(f"  Dimensiones: {ANCHO} x {PROFUNDIDAD} x {ALTURA} mm")
+print(f"  Grosor pared exterior: {GROSOR_PARED_EXT} mm  |  interior: {GROSOR_PARED_INT} mm")
+print(f"  Esquinas: radio={RADIO_ESQ} mm  |  segmentos/esquina={N_SEG_ESQ}")
+print(f"  Divisiones: {DIVISIONES_X}x{DIVISIONES_Y} (+ {DIVISIONES_Z} horizontales)")
