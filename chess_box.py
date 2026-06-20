@@ -7,9 +7,11 @@ import math
 ANCHO          = 155
 PROFUNDIDAD    = 155
 ALTURA         = 45
+ALTURA_DIVISIONES = ALTURA * 0.7   # altura máxima de las divisiones internas (≤ ALTURA)
 DIVISIONES_X   = 3
 DIVISIONES_Y   = 3
 DIVISIONES_Z   = 0
+GROSOR_BASE    = 3   # grosor del suelo (dirección Z); independiente de las paredes
 GROSOR_PARED_INT = 2
 GROSOR_PARED_EXT = 3
 RADIO_ESQ      = 3   # radio de redondeo esquinas exteriores (mm); max = GROSOR_PARED_EXT
@@ -19,16 +21,22 @@ N_SEG_ESQ      = 4   # segmentos de arco por esquina (mismo que ExS = visual con
 def crear_caja_correcta(ancho, profundidad, altura,
                         div_x, div_y, div_z,
                         grosor_int, grosor_ext,
+                        grosor_base, altura_div,
                         radio_esq, n_seg_esq):
     """
     CP – Contenedor de Piezas con esquinas exteriores redondeadas.
 
     Estructura de vértices (5 anillos):
       A  – anillo exterior inferior  (z=0,  N vértices, redondeado)
-      B  – anillo exterior a nivel del suelo interior (z=ge, N vértices, redondeado)
-      C  – anillo interior a nivel del suelo (z=ge, 4 vértices, rectangular)
+      B  – anillo exterior a nivel del suelo interior (z=gb, N vértices, redondeado)
+      C  – anillo interior a nivel del suelo (z=gb, 4 vértices, rectangular)
       D  – anillo exterior superior  (z=h,  N vértices, redondeado)
       E  – anillo interior superior  (z=h,  4 vértices, rectangular)
+
+    Parámetros independientes:
+      · grosor_base  → grosor del suelo (Z); puede diferir de grosor_ext
+      · altura_div   → hasta dónde llegan las divisiones internas (≤ altura)
+      · grosor_ext   → solo controla el grosor de las paredes externas (XY)
 
     Las esquinas interiores se mantienen rectangulares para no reducir el espacio
     interior y porque no son visibles. Las exteriores se redondean para que el ExS
@@ -41,10 +49,12 @@ def crear_caja_correcta(ancho, profundidad, altura,
       · Cara central del suelo (ring C, normal +z)
       · Paredes interiores C→E (4 quads, normales hacia el interior)
       · Borde superior D→E (triangulación annular, normal +z)
-      · Divisiones internas (cajas sólidas rectangulares sin cambios)
+      · Divisiones internas hasta altura_div (cajas sólidas rectangulares)
     """
 
     ge = grosor_ext
+    gb = grosor_base
+    hd = max(gb, min(altura_div, altura))   # altura divisiones, clamped [gb, h]
     a  = ancho
     p  = profundidad
     h  = altura
@@ -89,9 +99,9 @@ def crear_caja_correcta(ancho, profundidad, altura,
     vA = len(vertices)
     for x, y in outer_xy:  vertices.append((x, y, 0 ))   # A: exterior z=0  (N verts)
     vB = len(vertices)
-    for x, y in outer_xy:  vertices.append((x, y, ge))   # B: exterior z=ge (N verts)
+    for x, y in outer_xy:  vertices.append((x, y, gb))   # B: exterior z=gb (N verts)
     vC = len(vertices)
-    for x, y in inner_xy:  vertices.append((x, y, ge))   # C: interior z=ge (4 verts)
+    for x, y in inner_xy:  vertices.append((x, y, gb))   # C: interior z=gb (4 verts)
     vD = len(vertices)
     for x, y in outer_xy:  vertices.append((x, y, h ))   # D: exterior z=h  (N verts)
     vE = len(vertices)
@@ -173,17 +183,17 @@ def crear_caja_correcta(ancho, profundidad, altura,
     paso_x = a / (div_x + 1)
     for i in range(1, div_x + 1):
         x = paso_x * i
-        add_box(x - grosor_int/2, ge, ge, x + grosor_int/2, p-ge, h)
+        add_box(x - grosor_int/2, ge, gb, x + grosor_int/2, p-ge, hd)
 
     # Divisiones en Y
     paso_y = p / (div_y + 1)
     for i in range(1, div_y + 1):
         y = paso_y * i
-        add_box(ge, y - grosor_int/2, ge, a-ge, y + grosor_int/2, h)
+        add_box(ge, y - grosor_int/2, gb, a-ge, y + grosor_int/2, hd)
 
     # Divisiones en Z
     if div_z > 0:
-        paso_z = h / (div_z + 1)
+        paso_z = hd / (div_z + 1)
         for i in range(1, div_z + 1):
             z = paso_z * i
             add_box(ge, ge, z - grosor_int/2, a-ge, p-ge, z + grosor_int/2)
@@ -216,12 +226,15 @@ caja = crear_caja_correcta(
     div_z        = DIVISIONES_Z,
     grosor_int   = GROSOR_PARED_INT,
     grosor_ext   = GROSOR_PARED_EXT,
+    grosor_base  = GROSOR_BASE,
+    altura_div   = ALTURA_DIVISIONES,
     radio_esq    = RADIO_ESQ,
     n_seg_esq    = N_SEG_ESQ,
 )
 
 print(f"✓ CP creada correctamente")
 print(f"  Dimensiones: {ANCHO} x {PROFUNDIDAD} x {ALTURA} mm")
-print(f"  Grosor pared exterior: {GROSOR_PARED_EXT} mm  |  interior: {GROSOR_PARED_INT} mm")
+print(f"  Grosor pared exterior: {GROSOR_PARED_EXT} mm  |  interior: {GROSOR_PARED_INT} mm  |  base: {GROSOR_BASE} mm")
+print(f"  Altura divisiones internas: {ALTURA_DIVISIONES:.1f} mm  (de {ALTURA} mm totales)")
 print(f"  Esquinas: radio={RADIO_ESQ} mm  |  segmentos/esquina={N_SEG_ESQ}")
 print(f"  Divisiones: {DIVISIONES_X}x{DIVISIONES_Y} (+ {DIVISIONES_Z} horizontales)")
