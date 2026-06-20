@@ -14,6 +14,7 @@ ALTURA_EXS    = 40
 ALTO_ALETA    = 10
 GROSOR_ALETA  = 2
 TOLERANCIA    = 0.2   # holgura entre aleta interior y CP exterior (mm)
+FRAC_SOLAPE   = 0.35  # fracción del alto de aleta embebida en el cuerpo ExS (≥0.35)
 
 ANCHO_PLACA    = ANCHO * 0.5
 ALTO_BASE_RIEL = 8
@@ -21,7 +22,7 @@ PROF_RIEL      = 2.5
 
 
 def crear_exs(ancho, profundidad, altura, grosor_pared,
-              alto_aleta, grosor_aleta, tolerancia, radio_esq, n_seg_esq,
+              alto_aleta, grosor_aleta, tolerancia, frac_solape, radio_esq, n_seg_esq,
               ancho_placa, alto_base_riel, prof_riel):
     """
     ExS – Extensor de Soporte.
@@ -41,6 +42,7 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
     p   = profundidad
     h   = altura
     ga  = grosor_aleta
+    fs  = max(0.0, min(1.0, frac_solape))   # clamp 0..1
     tol = tolerancia
     ha  = alto_aleta
     r   = max(0.5, radio_esq)
@@ -167,8 +169,8 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
             faces.append([ob0+i, ib0+i, ib0+j, ob0+j])   # aro inferior
             faces.append([ob1+i, ob1+j, ib1+j, ib1+i])   # aro superior
 
-    add_aleta(-ha, 0  )    # aleta inferior
-    add_aleta(h,   h+ha)   # aleta superior
+    add_aleta(-(ha * (1 - fs)),  ha * fs     )   # inferior: fs*ha dentro, (1-fs)*ha hacia abajo
+    add_aleta(h - ha * fs,       h + ha*(1-fs))  # superior: fs*ha dentro, (1-fs)*ha hacia arriba
 
     # ══════════════════════════════════════════════════════════════════════════
     # RIEL DE COLA DE MILANO — cara frontal (Y=0)
@@ -227,6 +229,7 @@ exs = crear_exs(
     alto_aleta     = ALTO_ALETA,
     grosor_aleta   = GROSOR_ALETA,
     tolerancia     = TOLERANCIA,
+    frac_solape    = FRAC_SOLAPE,
     radio_esq      = RADIO_ESQ,
     n_seg_esq      = N_SEG_ESQ,
     ancho_placa    = ANCHO_PLACA,
@@ -237,5 +240,6 @@ exs = crear_exs(
 print(f"✓ ExS creado correctamente")
 print(f"  Cuerpo:  {ANCHO} x {PROFUNDIDAD} x {ALTURA_EXS} mm  (exterior redondeado r={RADIO_ESQ})")
 print(f"  Aletas:  grosor={GROSOR_ALETA} mm | alto={ALTO_ALETA} mm | tolerancia={TOLERANCIA} mm")
+print(f"  Solape:  {FRAC_SOLAPE*100:.0f}% ({ALTO_ALETA*FRAC_SOLAPE:.1f} mm) embebido en ExS | {ALTO_ALETA*(1-FRAC_SOLAPE):.1f} mm libre")
 print(f"  Esquinas aleta interior: r={RADIO_ESQ} mm  (= CP exterior → encaje exacto)")
 print(f"  Riel: ancho={ANCHO_PLACA:.1f} mm | base={ALTO_BASE_RIEL} mm | prof={PROF_RIEL} mm")
