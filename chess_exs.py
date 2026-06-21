@@ -177,6 +177,12 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
         j = (i + 1) % N
         faces.append([la_o_bot+j, la_o_bot+i, la_f_bot+i, la_f_bot+j])
 
+    # Escalón en z_la_mid: outer(N,-AO) → free(N,-tol), normal -Z
+    # Cierra el suelo de la zona embebida y el techo de la zona libre.
+    for i in range(N):
+        j = (i + 1) % N
+        faces.append([la_o_mid+j, la_o_mid+i, la_f_mid+i, la_f_mid+j])
+
     # Cara de TRANSICIÓN en z_la_mid (z=0):
     # Conecta free(N, a -tol) con exs_inner(4, a ge) cerrando el hueco.
     # Es también el fondo del cuerpo ExS. Normal: -Z.
@@ -239,6 +245,12 @@ def crear_exs(ancho, profundidad, altura, grosor_pared,
     for i in range(N):
         j = (i + 1) % N
         faces.append([ua_f_mid+i, ua_f_top+i, ua_f_top+j, ua_f_mid+j])
+
+    # Escalón en z_ua_mid: outer(N,-AO) → free(N,-tol), normal +Z
+    # Cierra el techo de la zona embebida y el suelo de la zona libre.
+    for i in range(N):
+        j = (i + 1) % N
+        faces.append([ua_o_mid+i, ua_f_mid+i, ua_f_mid+j, ua_o_mid+j])
 
     # Cara de TRANSICIÓN en z_ua_mid (z=h):
     # Conecta free(N, a -tol) con exs_inner(4, a ge). Normal: +Z.
